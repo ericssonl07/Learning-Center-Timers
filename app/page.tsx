@@ -2,7 +2,7 @@
 
 import { Badge } from "@/components/ui/badge"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useCallback } from "react"
 import { useRouter } from "next/navigation"
 import { TimerForm } from "@/components/timer-form"
 import { TimerList } from "@/components/timer-list"
@@ -36,12 +36,38 @@ export default function CountdownTimers() {
     }
   }, [authLoading, user, router])
 
+  const loadTimers = useCallback(async () => {
+    if (!user) return
+
+    setLoading(true)
+    console.log("Loading timers with superuser status:", isSuperuser) // Debug log
+    const loadedTimers = await fetchTimers(user.id, isSuperuser)
+    setTimers(loadedTimers)
+
+    // Restore completed and flashing timers
+    const newCompleted = new Set<string>()
+    const newFlashing = new Set<string>()
+
+    loadedTimers.forEach((timer) => {
+      if (timer.isComplete) {
+        newCompleted.add(timer.id)
+        if (timer.isActive && timer.endTime <= Date.now()) {
+          newFlashing.add(timer.id)
+        }
+      }
+    })
+
+    setCompletedTimers(newCompleted)
+    setFlashingTimers(newFlashing)
+    setLoading(false)
+  }, [user, isSuperuser])
+
   // Load timers from Supabase
   useEffect(() => {
     if (user) {
       loadTimers()
     }
-  }, [user, isSuperuser, isActive])
+  }, [user, isSuperuser, isActive, loadTimers])
   
   // Update timers and check for activation
   useEffect(() => {
@@ -94,31 +120,31 @@ export default function CountdownTimers() {
     return () => clearInterval(interval)
   }, [user, timers])
   
-  const loadTimers = async () => {
-    if (!user) return
-    
-    setLoading(true)
-    console.log("Loading timers with superuser status:", isSuperuser) // Debug log
-    const loadedTimers = await fetchTimers(user.id, isSuperuser)
-    setTimers(loadedTimers)
-    
-    // Restore completed and flashing timers
-    const newCompleted = new Set<string>()
-    const newFlashing = new Set<string>()
-    
-    loadedTimers.forEach((timer) => {
-      if (timer.isComplete) {
-        newCompleted.add(timer.id)
-        if (timer.isActive && timer.endTime <= Date.now()) {
-          newFlashing.add(timer.id)
-        }
-      }
-    })
-    
-    setCompletedTimers(newCompleted)
-    setFlashingTimers(newFlashing)
-    setLoading(false)
-  }
+  // const loadTimers = useCallback(async () => {
+  //   if (!user) return
+
+  //   setLoading(true)
+  //   console.log("Loading timers with superuser status:", isSuperuser) // Debug log
+  //   const loadedTimers = await fetchTimers(user.id, isSuperuser)
+  //   setTimers(loadedTimers)
+
+  //   // Restore completed and flashing timers
+  //   const newCompleted = new Set<string>()
+  //   const newFlashing = new Set<string>()
+
+  //   loadedTimers.forEach((timer) => {
+  //     if (timer.isComplete) {
+  //       newCompleted.add(timer.id)
+  //       if (timer.isActive && timer.endTime <= Date.now()) {
+  //         newFlashing.add(timer.id)
+  //       }
+  //     }
+  //   })
+
+  //   setCompletedTimers(newCompleted)
+  //   setFlashingTimers(newFlashing)
+  //   setLoading(false)
+  // }, [user, isSuperuser])
 
   const handleRefresh = async () => {
     setRefreshing(true)

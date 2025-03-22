@@ -11,6 +11,7 @@ import { useAuth } from "@/contexts/auth-context"
 import type { Timer } from "@/types/timer"
 import { Clock, User, BookOpen, Check, X } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { LCAppUser } from "@/types/user"
 
 interface AdminPanelProps {
   onApprove: () => void
@@ -19,7 +20,7 @@ interface AdminPanelProps {
 export function AdminPanel({ onApprove }: AdminPanelProps) {
   const { refreshProfile } = useAuth()
   const [pendingTimers, setPendingTimers] = useState<Timer[]>([])
-  const [pendingSuperusers, setPendingSuperusers] = useState<any[]>([])
+  const [pendingSuperusers, setPendingSuperusers] = useState<LCAppUser[]>([])
   const [loading, setLoading] = useState(true)
   const [activeTab, setActiveTab] = useState("timers")
 
