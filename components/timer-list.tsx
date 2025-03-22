@@ -4,12 +4,18 @@ import { TimerCard } from "./timer-card"
 import type { Timer } from "@/types/timer"
 import { format, isSameDay } from "date-fns"
 import { Separator } from "@/components/ui/separator"
+import { Switch } from "@/components/ui/switch"
+import { Label } from "@/components/ui/label"
+import { Maximize2, Minimize2 } from "lucide-react"
 
 interface TimerListProps {
   timers: Timer[]
   onRemoveTimer: (id: string) => void
   onTimerComplete: (id: string) => void
   activeOnly?: boolean
+  setActiveOnly?: (value: boolean) => void
+  flashingTimers: Set<string>
+  completedTimers: Set<string>
 }
 
 interface GroupedTimers {
@@ -19,7 +25,15 @@ interface GroupedTimers {
   }
 }
 
-export function TimerList({ timers, onRemoveTimer, onTimerComplete, activeOnly = false }: TimerListProps) {
+export function TimerList({
+  timers,
+  onRemoveTimer,
+  onTimerComplete,
+  activeOnly = false,
+  setActiveOnly,
+  flashingTimers,
+  completedTimers,
+}: TimerListProps) {
   // Filter timers if activeOnly is true
   const filteredTimers = activeOnly ? timers.filter((timer) => timer.isActive) : timers
 
@@ -45,6 +59,8 @@ export function TimerList({ timers, onRemoveTimer, onTimerComplete, activeOnly =
             onRemove={onRemoveTimer}
             onComplete={onTimerComplete}
             fullScreen={activeOnly}
+            isFlashing={flashingTimers.has(timer.id)}
+            isCompleted={completedTimers.has(timer.id)}
           />
         ))}
       </div>
@@ -77,15 +93,29 @@ export function TimerList({ timers, onRemoveTimer, onTimerComplete, activeOnly =
     <div className="space-y-6">
       {hasActiveTimers && (
         <div className="space-y-4">
-          <div className="flex items-center">
+          <div className="flex items-center justify-between">
             <h2 className="text-lg font-semibold">Active Timers</h2>
-            <Separator className="flex-1 ml-3" />
+            <Separator className="flex-1 mx-3" />
+            <div className="flex items-center space-x-2">
+              <Switch id="active-only-inline" checked={activeOnly} onCheckedChange={setActiveOnly} />
+              <Label htmlFor="active-only-inline" className="flex items-center text-sm text-muted-foreground">
+                {activeOnly ? <Maximize2 className="h-3.5 w-3.5 mr-1" /> : <Minimize2 className="h-3.5 w-3.5 mr-1" />}
+                {activeOnly ? "Full screen" : "Normal view"}
+              </Label>
+            </div>
           </div>
           <div className="grid gap-4 md:grid-cols-2">
             {filteredTimers
               .filter((timer) => timer.isActive)
               .map((timer) => (
-                <TimerCard key={timer.id} timer={timer} onRemove={onRemoveTimer} onComplete={onTimerComplete} />
+                <TimerCard
+                  key={timer.id}
+                  timer={timer}
+                  onRemove={onRemoveTimer}
+                  onComplete={onTimerComplete}
+                  isFlashing={flashingTimers.has(timer.id)}
+                  isCompleted={completedTimers.has(timer.id)}
+                />
               ))}
           </div>
         </div>
@@ -112,7 +142,14 @@ export function TimerList({ timers, onRemoveTimer, onTimerComplete, activeOnly =
             </div>
             <div className="grid gap-4 md:grid-cols-2">
               {inactiveTimers.map((timer) => (
-                <TimerCard key={timer.id} timer={timer} onRemove={onRemoveTimer} onComplete={onTimerComplete} />
+                <TimerCard
+                  key={timer.id}
+                  timer={timer}
+                  onRemove={onRemoveTimer}
+                  onComplete={onTimerComplete}
+                  isFlashing={flashingTimers.has(timer.id)}
+                  isCompleted={completedTimers.has(timer.id)}
+                />
               ))}
             </div>
           </div>

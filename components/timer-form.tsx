@@ -1,7 +1,6 @@
 "use client"
 
 import type React from "react"
-
 import { useState } from "react"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -9,27 +8,24 @@ import { Label } from "@/components/ui/label"
 import { Calendar } from "@/components/ui/calendar"
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover"
 import { cn } from "@/lib/utils"
-import { format } from "date-fns"
-import { CalendarIcon, Clock, Zap, X } from "lucide-react"
+import { format, addDays } from "date-fns"
+import { CalendarIcon, Clock, Zap, X, AlertCircle } from "lucide-react"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { Alert, AlertDescription } from "@/components/ui/alert"
+import { requestTimer } from "@/services/timer-service"
 
-// Update the TimerFormProps interface to include seatNumber
 interface TimerFormProps {
-  onAddTimer: (
-    startTime: number,
-    duration: number,
-    subject: string,
-    teacherName: string,
-    studentName: string,
-    seatNumber?: string,
-  ) => void
+  onAddTimer: () => void
+  userId: string
+  isSuperuser: boolean
+  isActive: boolean
 }
 
-export function TimerForm({ onAddTimer }: TimerFormProps) {
-  const [date, setDate] = useState<Date | undefined>(new Date())
-  const [hours, setHours] = useState<number>(0)
-  const [minutes, setMinutes] = useState<number>(0)
-  const [seconds, setSeconds] = useState<number>(0)
+export function TimerForm({ onAddTimer, userId, isSuperuser, isActive }: TimerFormProps) {
+  const [date, setDate] = useState<Date | undefined>(isSuperuser ? new Date() : addDays(new Date(), 2))
+  const [hoursInput, setHoursInput] = useState<string>("0")
+  const [minutesInput, setMinutesInput] = useState<string>("0")
+  const [secondsInput, setSecondsInput] = useState<string>("0")
   const [startHour, setStartHour] = useState<string>("12")
   const [startMinute, setStartMinute] = useState<string>("00")
   const [startPeriod, setStartPeriod] = useState<string>("PM")
@@ -39,15 +35,23 @@ export function TimerForm({ onAddTimer }: TimerFormProps) {
   const [seatNumber, setSeatNumber] = useState<string>("")
   const [isOpen, setIsOpen] = useState(false)
   const [startImmediately, setStartImmediately] = useState(false)
+  const [error, setError] = useState<string | null>(null)
+  const [loading, setLoading] = useState(false)
   const [errors, setErrors] = useState<{
     subject?: string
     teacherName?: string
     studentName?: string
     duration?: string
+    date?: string
   }>({})
 
-  const handleSubmit = (e: React.FormEvent) => {
+  // Calculate the minimum date for scheduling (today for superusers, today + 2 days for regular users)
+  const minDate = isSuperuser ? undefined : addDays(new Date(), 2)
+
+  const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
+    setLoading(true)
+    setError(null)
 
     // Validate required fields
     const newErrors: {
@@ -55,6 +59,7 @@ export function TimerForm({ onAddTimer }: TimerFormProps) {
       teacherName?: string
       studentName?: string
       duration?: string
+      date?: string
     } = {}
 
     if (!subject.trim()) {
@@ -69,6 +74,11 @@ export function TimerForm({ onAddTimer }: TimerFormProps) {
       newErrors.studentName = "Student name is required"
     }
 
+    // Parse duration inputs
+    const hours = Number.parseInt(hoursInput) || 0
+    const minutes = Number.parseInt(minutesInput) || 0
+    const seconds = Number.parseInt(secondsInput) || 0
+
     // Calculate duration
     const durationMs = hours * 60 * 60 * 1000 + minutes * 60 * 1000 + seconds * 1000
 
@@ -76,9 +86,18 @@ export function TimerForm({ onAddTimer }: TimerFormProps) {
       newErrors.duration = "Duration must be greater than zero"
     }
 
+    // Check date for regular users
+    if (!isSuperuser && !startImmediately) {
+      const twoDaysFromNow = addDays(new Date(), 2)
+      if (date && date < twoDaysFromNow) {
+        newErrors.date = "Regular users must schedule at least 2 days in advance"
+      }
+    }
+
     // If there are errors, show them and don't submit
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors)
+      setLoading(false)
       return
     }
 
@@ -89,9 +108,18 @@ export function TimerForm({ onAddTimer }: TimerFormProps) {
     let startTimeMs: number
 
     if (startImmediately) {
+      if (!isSuperuser) {
+        setError("Only superusers can schedule immediate timers")
+        setLoading(false)
+        return
+      }
       startTimeMs = Date.now()
     } else {
-      if (!date) return
+      if (!date) {
+        setError("Please select a date")
+        setLoading(false)
+        return
+      }
 
       const startDate = new Date(date)
       const hour = Number.parseInt(startHour) + (startPeriod === "PM" && Number.parseInt(startHour) !== 12 ? 12 : 0)
@@ -101,21 +129,39 @@ export function TimerForm({ onAddTimer }: TimerFormProps) {
       startTimeMs = startDate.getTime()
     }
 
-    onAddTimer(startTimeMs, durationMs, subject, teacherName, studentName, seatNumber)
+    try {
+      await requestTimer(
+        userId,
+        startTimeMs,
+        durationMs,
+        subject,
+        teacherName,
+        studentName,
+        seatNumber,
+        isSuperuser && isActive, // Auto-approve if active superuser
+      )
 
-    // Reset form
-    setHours(0)
-    setMinutes(0)
-    setSeconds(0)
-    setSubject("")
-    setTeacherName("")
-    setStudentName("")
-    setSeatNumber("")
-    setStartImmediately(false)
-    setIsOpen(false)
+      // Reset form
+      setHoursInput("0")
+      setMinutesInput("0")
+      setSecondsInput("0")
+      setSubject("")
+      setTeacherName("")
+      setStudentName("")
+      setSeatNumber("")
+      setStartImmediately(false)
+      setIsOpen(false)
+
+      // Refresh timers list
+      onAddTimer()
+    } catch (err) {
+      setError("Failed to create timer request. Please try again.")
+    } finally {
+      setLoading(false)
+    }
   }
 
-  const addPreset = (presetMinutes: number) => {
+  const addPreset = async (presetMinutes: number) => {
     // Validate required fields
     if (!subject.trim() || !teacherName.trim() || !studentName.trim()) {
       setErrors({
@@ -126,16 +172,37 @@ export function TimerForm({ onAddTimer }: TimerFormProps) {
       return
     }
 
+    // Check date for regular users
+    if (!isSuperuser && !startImmediately) {
+      const twoDaysFromNow = addDays(new Date(), 2)
+      if (date && date < twoDaysFromNow) {
+        setErrors({
+          date: "Regular users must schedule at least 2 days in advance",
+        })
+        return
+      }
+    }
+
     // Clear any previous errors
     setErrors({})
+    setLoading(true)
 
     // Calculate start time
     let startTimeMs: number
 
     if (startImmediately) {
+      if (!isSuperuser) {
+        setError("Only superusers can schedule immediate timers")
+        setLoading(false)
+        return
+      }
       startTimeMs = Date.now()
     } else {
-      if (!date) return
+      if (!date) {
+        setError("Please select a date")
+        setLoading(false)
+        return
+      }
 
       const startDate = new Date(date)
       const hour = Number.parseInt(startHour) + (startPeriod === "PM" && Number.parseInt(startHour) !== 12 ? 12 : 0)
@@ -145,15 +212,33 @@ export function TimerForm({ onAddTimer }: TimerFormProps) {
       startTimeMs = startDate.getTime()
     }
 
-    onAddTimer(startTimeMs, presetMinutes * 60 * 1000, subject, teacherName, studentName, seatNumber)
+    try {
+      await requestTimer(
+        userId,
+        startTimeMs,
+        presetMinutes * 60 * 1000,
+        subject,
+        teacherName,
+        studentName,
+        seatNumber,
+        isSuperuser && isActive, // Auto-approve if active superuser
+      )
 
-    // Reset form
-    setSubject("")
-    setTeacherName("")
-    setStudentName("")
-    setSeatNumber("")
-    setStartImmediately(false)
-    setIsOpen(false)
+      // Reset form
+      setSubject("")
+      setTeacherName("")
+      setStudentName("")
+      setSeatNumber("")
+      setStartImmediately(false)
+      setIsOpen(false)
+
+      // Refresh timers list
+      onAddTimer()
+    } catch (err) {
+      setError("Failed to create timer request. Please try again.")
+    } finally {
+      setLoading(false)
+    }
   }
 
   const hours12 = Array.from({ length: 12 }, (_, i) => (i + 1).toString().padStart(2, "0"))
@@ -166,28 +251,69 @@ export function TimerForm({ onAddTimer }: TimerFormProps) {
     }
   }
 
+  // Handle duration input validation
+  const handleDurationChange = (value: string, setter: React.Dispatch<React.SetStateAction<string>>) => {
+    // Allow empty string or numbers
+    if (value === "" || /^\d+$/.test(value)) {
+      setter(value)
+    }
+  }
+
   // Toggle immediate start
   const toggleImmediateStart = () => {
+    if (!isSuperuser || !isActive) {
+      setError("Only active superusers can schedule immediate timers")
+      return
+    }
     setStartImmediately(!startImmediately)
+    setError(null)
   }
 
   return (
     <div className="mb-6">
       <Button className="w-full" size="lg" onClick={() => setIsOpen(true)}>
-        Add New Timer
+        {isSuperuser && isActive ? "Add New Timer" : "Request New Timer"}
       </Button>
 
       {isOpen && (
         <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4 overflow-auto">
           <div className="bg-background rounded-lg shadow-lg w-full max-w-2xl max-h-[90vh] overflow-auto">
             <div className="sticky top-0 bg-background z-10 flex items-center justify-between p-4 border-b">
-              <h2 className="font-semibold text-lg">Schedule a Timer</h2>
+              <h2 className="font-semibold text-lg">
+                {isSuperuser && isActive ? "Schedule a Timer" : "Request a Timer"}
+              </h2>
               <Button variant="ghost" size="icon" onClick={() => setIsOpen(false)}>
                 <X className="h-4 w-4" />
               </Button>
             </div>
 
             <div className="p-6">
+              {error && (
+                <Alert variant="destructive" className="mb-4">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertDescription>{error}</AlertDescription>
+                </Alert>
+              )}
+
+              {!isSuperuser && (
+                <Alert className="mb-4">
+                  <AlertDescription>
+                    Regular users must schedule timers at least 2 days in advance. Your request will need approval from
+                    a superuser.
+                  </AlertDescription>
+                </Alert>
+              )}
+
+              {isSuperuser && !isActive && (
+                <Alert variant="destructive" className="mb-4">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertDescription>
+                    Your superuser account is pending approval. Timer requests will need approval from an active
+                    superuser.
+                  </AlertDescription>
+                </Alert>
+              )}
+
               <form onSubmit={handleSubmit} className="space-y-4">
                 <div className="space-y-2">
                   <Label htmlFor="subject" className="font-medium">
@@ -250,6 +376,7 @@ export function TimerForm({ onAddTimer }: TimerFormProps) {
                       size="sm"
                       onClick={toggleImmediateStart}
                       className="h-8"
+                      disabled={!isSuperuser || !isActive}
                     >
                       <Zap className="h-3.5 w-3.5 mr-1" />
                       Immediately
@@ -265,6 +392,7 @@ export function TimerForm({ onAddTimer }: TimerFormProps) {
                             className={cn(
                               "w-full justify-start text-left font-normal",
                               !date && "text-muted-foreground",
+                              errors.date ? "border-red-500" : "",
                             )}
                           >
                             <CalendarIcon className="mr-2 h-4 w-4" />
@@ -272,9 +400,19 @@ export function TimerForm({ onAddTimer }: TimerFormProps) {
                           </Button>
                         </PopoverTrigger>
                         <PopoverContent className="w-auto p-0">
-                          <Calendar mode="single" selected={date} onSelect={setDate} initialFocus />
+                          <Calendar
+                            mode="single"
+                            selected={date}
+                            onSelect={setDate}
+                            initialFocus
+                            disabled={(date) => {
+                              if (!minDate) return false
+                              return date < minDate
+                            }}
+                          />
                         </PopoverContent>
                       </Popover>
+                      {errors.date && <p className="text-red-500 text-xs mt-1">{errors.date}</p>}
 
                       <div className="flex items-center space-x-2">
                         <Clock className="h-4 w-4 text-muted-foreground" />
@@ -329,59 +467,151 @@ export function TimerForm({ onAddTimer }: TimerFormProps) {
                       <Label htmlFor="hours" className="text-xs">
                         Hours
                       </Label>
-                      <Input
-                        id="hours"
-                        type="number"
-                        min="0"
-                        value={hours}
-                        onChange={(e) => setHours(Number.parseInt(e.target.value) || 0)}
-                        className={errors.duration ? "border-red-500" : ""}
-                      />
+                      <div className="flex">
+                        <Input
+                          id="hours"
+                          value={hoursInput}
+                          onChange={(e) => handleDurationChange(e.target.value, setHoursInput)}
+                          placeholder="0"
+                          className={`rounded-r-none ${errors.duration ? "border-red-500" : ""}`}
+                          onBlur={() => {
+                            if (hoursInput === "") {
+                              setHoursInput("0")
+                            }
+                          }}
+                        />
+                        <div className="flex flex-col border border-l-0 rounded-r-md">
+                          <button
+                            type="button"
+                            className="px-2 border-b h-[18px] text-xs flex items-center justify-center hover:bg-muted"
+                            onClick={() => {
+                              const current = Number.parseInt(hoursInput) || 0
+                              setHoursInput((current + 1).toString())
+                            }}
+                          >
+                            ▲
+                          </button>
+                          <button
+                            type="button"
+                            className="px-2 h-[18px] text-xs flex items-center justify-center hover:bg-muted"
+                            onClick={() => {
+                              const current = Number.parseInt(hoursInput) || 0
+                              setHoursInput(Math.max(0, current - 1).toString())
+                            }}
+                          >
+                            ▼
+                          </button>
+                        </div>
+                      </div>
                     </div>
                     <div className="space-y-1">
                       <Label htmlFor="minutes" className="text-xs">
                         Minutes
                       </Label>
-                      <Input
-                        id="minutes"
-                        type="number"
-                        min="0"
-                        max="59"
-                        value={minutes}
-                        onChange={(e) => setMinutes(Number.parseInt(e.target.value) || 0)}
-                        className={errors.duration ? "border-red-500" : ""}
-                      />
+                      <div className="flex">
+                        <Input
+                          id="minutes"
+                          value={minutesInput}
+                          onChange={(e) => handleDurationChange(e.target.value, setMinutesInput)}
+                          placeholder="0"
+                          className={`rounded-r-none ${errors.duration ? "border-red-500" : ""}`}
+                          onBlur={() => {
+                            if (minutesInput === "") {
+                              setMinutesInput("0")
+                            } else {
+                              const mins = Number.parseInt(minutesInput)
+                              if (mins > 59) {
+                                setMinutesInput("59")
+                              }
+                            }
+                          }}
+                        />
+                        <div className="flex flex-col border border-l-0 rounded-r-md">
+                          <button
+                            type="button"
+                            className="px-2 border-b h-[18px] text-xs flex items-center justify-center hover:bg-muted"
+                            onClick={() => {
+                              const current = Number.parseInt(minutesInput) || 0
+                              setMinutesInput(Math.min(59, current + 1).toString())
+                            }}
+                          >
+                            ▲
+                          </button>
+                          <button
+                            type="button"
+                            className="px-2 h-[18px] text-xs flex items-center justify-center hover:bg-muted"
+                            onClick={() => {
+                              const current = Number.parseInt(minutesInput) || 0
+                              setMinutesInput(Math.max(0, current - 1).toString())
+                            }}
+                          >
+                            ▼
+                          </button>
+                        </div>
+                      </div>
                     </div>
                     <div className="space-y-1">
                       <Label htmlFor="seconds" className="text-xs">
                         Seconds
                       </Label>
-                      <Input
-                        id="seconds"
-                        type="number"
-                        min="0"
-                        max="59"
-                        value={seconds}
-                        onChange={(e) => setSeconds(Number.parseInt(e.target.value) || 0)}
-                        className={errors.duration ? "border-red-500" : ""}
-                      />
+                      <div className="flex">
+                        <Input
+                          id="seconds"
+                          value={secondsInput}
+                          onChange={(e) => handleDurationChange(e.target.value, setSecondsInput)}
+                          placeholder="0"
+                          className={`rounded-r-none ${errors.duration ? "border-red-500" : ""}`}
+                          onBlur={() => {
+                            if (secondsInput === "") {
+                              setSecondsInput("0")
+                            } else {
+                              const secs = Number.parseInt(secondsInput)
+                              if (secs > 59) {
+                                setSecondsInput("59")
+                              }
+                            }
+                          }}
+                        />
+                        <div className="flex flex-col border border-l-0 rounded-r-md">
+                          <button
+                            type="button"
+                            className="px-2 border-b h-[18px] text-xs flex items-center justify-center hover:bg-muted"
+                            onClick={() => {
+                              const current = Number.parseInt(secondsInput) || 0
+                              setSecondsInput(Math.min(59, current + 1).toString())
+                            }}
+                          >
+                            ▲
+                          </button>
+                          <button
+                            type="button"
+                            className="px-2 h-[18px] text-xs flex items-center justify-center hover:bg-muted"
+                            onClick={() => {
+                              const current = Number.parseInt(secondsInput) || 0
+                              setSecondsInput(Math.max(0, current - 1).toString())
+                            }}
+                          >
+                            ▼
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   </div>
                   {errors.duration && <p className="text-red-500 text-xs mt-1">{errors.duration}</p>}
                 </div>
 
                 <div className="flex flex-col gap-2 pt-2">
-                  <Button type="submit" className="w-full">
-                    Create Timer
+                  <Button type="submit" className="w-full" disabled={loading}>
+                    {loading ? "Submitting..." : isSuperuser && isActive ? "Create Timer" : "Request Timer"}
                   </Button>
                   <div className="grid grid-cols-3 gap-2">
-                    <Button type="button" variant="outline" onClick={() => addPreset(30)}>
+                    <Button type="button" variant="outline" onClick={() => addPreset(30)} disabled={loading}>
                       30m
                     </Button>
-                    <Button type="button" variant="outline" onClick={() => addPreset(45)}>
+                    <Button type="button" variant="outline" onClick={() => addPreset(45)} disabled={loading}>
                       45m
                     </Button>
-                    <Button type="button" variant="outline" onClick={() => addPreset(60)}>
+                    <Button type="button" variant="outline" onClick={() => addPreset(60)} disabled={loading}>
                       1h
                     </Button>
                   </div>

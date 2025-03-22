@@ -5,7 +5,7 @@ import { Card, CardContent, CardFooter } from "@/components/ui/card"
 import { Button } from "@/components/ui/button"
 import { Progress } from "@/components/ui/progress"
 import type { Timer } from "@/types/timer"
-import { X, Clock, AlarmClock, BookOpen, User, UserRound } from "lucide-react"
+import { X, Clock, AlarmClock, BookOpen, User, UserRound, AlertCircle } from "lucide-react"
 import { format } from "date-fns"
 import { Badge } from "@/components/ui/badge"
 
@@ -14,13 +14,21 @@ interface TimerCardProps {
   onRemove: (id: string) => void
   onComplete: (id: string) => void
   fullScreen?: boolean
+  isFlashing?: boolean
+  isCompleted?: boolean
 }
 
-export function TimerCard({ timer, onRemove, onComplete, fullScreen = false }: TimerCardProps) {
+export function TimerCard({
+  timer,
+  onRemove,
+  onComplete,
+  fullScreen = false,
+  isFlashing = false,
+  isCompleted = false,
+}: TimerCardProps) {
   const [timeLeft, setTimeLeft] = useState<number>(
     timer.isActive ? Math.max(0, timer.endTime - Date.now()) : timer.duration,
   )
-  const [isFlashing, setIsFlashing] = useState<boolean>(false)
   const [timeToStart, setTimeToStart] = useState<number>(Math.max(0, timer.startTime - Date.now()))
 
   // Calculate progress percentage
@@ -54,15 +62,30 @@ export function TimerCard({ timer, onRemove, onComplete, fullScreen = false }: T
         const newTimeLeft = Math.max(0, timer.endTime - now)
         setTimeLeft(newTimeLeft)
 
-        if (newTimeLeft <= 0 && !timer.isComplete) {
-          setIsFlashing(true)
+        if (newTimeLeft <= 0 && !isCompleted) {
           onComplete(timer.id)
         }
       }
     }, 100)
 
     return () => clearInterval(interval)
-  }, [timer, onComplete])
+  }, [timer, onComplete, isCompleted])
+
+  // Determine status badge color
+  const getStatusBadge = () => {
+    if (timer.status === "requested") {
+      return (
+        <Badge
+          variant="outline"
+          className="bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-400 border-yellow-200 dark:border-yellow-800"
+        >
+          <AlertCircle className="h-3 w-3 mr-1" />
+          Pending Approval
+        </Badge>
+      )
+    }
+    return null
+  }
 
   return (
     <Card
@@ -90,15 +113,18 @@ export function TimerCard({ timer, onRemove, onComplete, fullScreen = false }: T
               </div>
             </div>
           </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => onRemove(timer.id)}
-            aria-label="Remove timer"
-            className="h-8 w-8"
-          >
-            <X className="h-4 w-4" />
-          </Button>
+          <div className="flex flex-col items-end gap-2">
+            {getStatusBadge()}
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={() => onRemove(timer.id)}
+              aria-label="Remove timer"
+              className="h-8 w-8"
+            >
+              <X className="h-4 w-4" />
+            </Button>
+          </div>
         </div>
 
         {timer.isActive ? (
@@ -120,9 +146,15 @@ export function TimerCard({ timer, onRemove, onComplete, fullScreen = false }: T
               <AlarmClock className="h-4 w-4" />
               <span>Duration: {formatTimeLeft(timer.duration)}</span>
             </div>
-            <div className="text-sm font-medium text-center p-2 bg-muted/30 rounded-md">
-              Waiting to start in {formatTimeLeft(timeToStart)}
-            </div>
+            {timer.status === "approved" ? (
+              <div className="text-sm font-medium text-center p-2 bg-muted/30 rounded-md">
+                Waiting to start in {formatTimeLeft(timeToStart)}
+              </div>
+            ) : (
+              <div className="text-sm font-medium text-center p-2 bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-400 rounded-md">
+                Waiting for approval
+              </div>
+            )}
           </div>
         )}
       </CardContent>

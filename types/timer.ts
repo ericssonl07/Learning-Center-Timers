@@ -9,4 +9,7 @@ export interface Timer {
     endTime: number
     isComplete: boolean
     isActive: boolean
-}
+    status: "requested" | "approved"
+  }
+  
+  
