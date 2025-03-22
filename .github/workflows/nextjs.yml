@@ -87,6 +87,8 @@ jobs:
           NEXT_PUBLIC_SUPABASE_ANON_KEY: ${{ secrets.NEXT_PUBLIC_SUPABASE_ANON_KEY }}
           SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
           SUPABASE_ANON_KEY: ${{ secrets.SUPABASE_ANON_KEY }}
+          supabaseUrl: ${{ secrets.SUPABASE_URL }}
+          supabaseAnonKey: ${{ secrets.SUPABASE_ANON_KEY }}
       - name: Upload artifact
         uses: actions/upload-pages-artifact@v3
         with:
