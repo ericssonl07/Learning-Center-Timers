@@ -181,7 +181,7 @@ export async function rejectSuperuser(userId: string): Promise<boolean> {
 
     // Try to use the RPC function first
     try {
-      const { data, error } = await supabase.rpc("reject_superuser", { p_user_id: userId })
+      const { data, error } = await supabase.rpc("reject_superuser", { user_id: userId })
 
       if (error) {
         throw error
