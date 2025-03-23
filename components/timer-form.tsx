@@ -155,8 +155,7 @@ export function TimerForm({ onAddTimer, userId, isSuperuser, isActive }: TimerFo
       // Refresh timers list
       onAddTimer()
     } catch (err) {
-      // Log the error and show a generic message
-      console.error("Error creating timer:", err)
+      console.log(err)
       setError("Failed to create timer request. Please try again.")
     } finally {
       setLoading(false)
@@ -237,8 +236,7 @@ export function TimerForm({ onAddTimer, userId, isSuperuser, isActive }: TimerFo
       // Refresh timers list
       onAddTimer()
     } catch (err) {
-      // Log the error and show a generic message
-      console.error("Error creating timer:", err)
+      console.log(err)
       setError("Failed to create timer request. Please try again.")
     } finally {
       setLoading(false)

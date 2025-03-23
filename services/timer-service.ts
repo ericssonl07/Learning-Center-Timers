@@ -1,5 +1,7 @@
 import { supabase } from "@/lib/supabase"
 import type { Timer } from "@/types/timer"
+import type { Profile } from "@/types/supabase"
+import { SetStateAction } from "react"
 
 export async function fetchTimers(userId: string, isSuperuser: boolean): Promise<Timer[]> {
   try {
@@ -40,17 +42,38 @@ export async function fetchPendingTimers(): Promise<Timer[]> {
   }
 }
 
-export async function fetchPendingSuperusers(): Promise<any[]> {
+export async function fetchPendingSuperusers(): Promise<Profile[]> {
   try {
-    // Always use the RPC function to avoid RLS issues
-    const { data, error } = await supabase.rpc("get_pending_superusers")
+    console.log("Fetching pending superusers") // Debug log
 
-    if (error) {
-      console.error("Error fetching pending superusers:", error)
-      return []
+    // Try to use the RPC function first
+    try {
+      const { data, error } = await supabase.rpc("get_pending_superusers")
+
+      if (error) {
+        throw error
+      }
+
+      console.log("Pending superusers from RPC:", data) // Debug log
+      return data
+    } catch (rpcError) {
+      console.error("Error using RPC for pending superusers, falling back to direct query:", rpcError)
+
+      // Fall back to direct query
+      const { data, error } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("role", "superuser")
+        .eq("status", "pending")
+        .order("created_at", { ascending: true })
+
+      if (error) {
+        throw error
+      }
+
+      console.log("Pending superusers from direct query:", data) // Debug log
+      return data
     }
-
-    return data
   } catch (error) {
     console.error("Error fetching pending superusers:", error)
     return []
@@ -119,17 +142,70 @@ export async function approveTimer(timerId: string): Promise<Timer | null> {
 
 export async function approveSuperuser(userId: string): Promise<boolean> {
   try {
-    // Use the RPC function to approve the superuser
-    const { error } = await supabase.rpc("approve_superuser", { p_user_id: userId })
+    console.log("Approving superuser:", userId) // Debug log
 
-    if (error) {
-      console.error("Error approving superuser:", error)
-      return false
+    // Try to use the RPC function first
+    try {
+      const { data, error } = await supabase.rpc("approve_superuser", { p_user_id: userId })
+
+      if (error) {
+        throw error
+      }
+
+      return data || false
+    } catch (rpcError) {
+      console.error("Error using RPC for approving superuser, falling back to direct update:", rpcError)
+
+      // Fall back to direct update
+      const { error } = await supabase
+        .from("profiles")
+        .update({ status: "active" })
+        .eq("id", userId)
+        .eq("role", "superuser")
+
+      if (error) {
+        throw error
+      }
+
+      return true
     }
-
-    return true
   } catch (error) {
     console.error("Error approving superuser:", error)
+    return false
+  }
+}
+
+export async function rejectSuperuser(userId: string): Promise<boolean> {
+  try {
+    console.log("Rejecting superuser:", userId) // Debug log
+
+    // Try to use the RPC function first
+    try {
+      const { data, error } = await supabase.rpc("reject_superuser", { p_user_id: userId })
+
+      if (error) {
+        throw error
+      }
+
+      return data || false
+    } catch (rpcError) {
+      console.error("Error using RPC for rejecting superuser, falling back to direct update:", rpcError)
+
+      // Fall back to direct update
+      const { error } = await supabase
+        .from("profiles")
+        .update({ status: "rejected" })
+        .eq("id", userId)
+        .eq("role", "superuser")
+
+      if (error) {
+        throw error
+      }
+
+      return true
+    }
+  } catch (error) {
+    console.error("Error rejecting superuser:", error)
     return false
   }
 }
@@ -162,12 +238,15 @@ export async function updateTimer(timer: Timer): Promise<Timer | null> {
 }
 
 export async function deleteTimer(id: string): Promise<boolean> {
+  console.log("Deleting timer:", id) // Debug log
   const { error } = await supabase.from("timers").delete().eq("id", id)
 
   if (error) {
     console.error("Error deleting timer:", error)
     return false
   }
+
+  window.location.reload();
 
   return true
 }

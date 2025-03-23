@@ -43,9 +43,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     // Listen for auth changes
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = supabase.auth.onAuthStateChange(async (_event, session) => {
+      console.log("Auth state changed:", _event, session?.user?.id)
       setSession(session)
       setUser(session?.user ?? null)
+
       if (session?.user) {
         fetchProfile(session.user.id)
       } else {
@@ -64,18 +66,99 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   async function fetchProfile(userId: string) {
     setLoading(true)
     try {
-      // Always use the RPC function to avoid RLS recursion
-      const { data, error } = await supabase.rpc("get_profile_by_id", { p_user_id: userId })
+      console.log("Fetching profile for user:", userId)
+
+      // Try to get the profile directly from the profiles table
+      const { data, error } = await supabase.from("profiles").select("*").eq("id", userId).single()
 
       if (error) {
         console.error("Error fetching profile:", error)
-      } else if (data) {
-        console.log("Profile data:", data) // Debug log
+
+        // If the profile doesn't exist, create one
+        if (error.code === "PGRST116") {
+          // No rows returned
+          await createProfile(userId)
+        } else {
+          setLoading(false)
+        }
+        return
+      }
+
+      if (data) {
+        console.log("Profile found:", data)
         updateProfileState(data)
+      } else {
+        console.log("No profile found, creating one")
+        await createProfile(userId)
       }
     } catch (error) {
-      console.error("Error fetching profile:", error)
-    } finally {
+      console.error("Error in fetchProfile:", error)
+      setLoading(false)
+    }
+  }
+
+  async function createProfile(userId: string) {
+    try {
+      // Get user details from auth
+      const { data: userData, error: userError } = await supabase.auth.getUser()
+
+      if (userError || !userData.user) {
+        console.error("Error getting user data:", userError)
+        setLoading(false)
+        return
+      }
+
+      const user = userData.user
+      const email = user.email || ""
+
+      // Determine role and status from metadata or use defaults
+      const metadata = user.user_metadata || {}
+      const role = metadata.role || "user"
+      const status = role === "superuser" ? "pending" : "active"
+
+      console.log("Creating profile with:", { userId, email, role, status })
+
+      // Insert the profile directly
+      const { data, error } = await supabase
+        .from("profiles")
+        .insert({
+          id: userId,
+          email,
+          role,
+          status,
+          created_at: new Date().toISOString(),
+        })
+        .select()
+        .single()
+
+      if (error) {
+        console.error("Error creating profile:", error)
+
+        // If the profile already exists, try to fetch it again
+        if (error.code === "23505") {
+          // Unique violation
+          const { data: existingProfile, error: fetchError } = await supabase
+            .from("profiles")
+            .select("*")
+            .eq("id", userId)
+            .single()
+
+          if (fetchError) {
+            console.error("Error fetching existing profile:", fetchError)
+          } else if (existingProfile) {
+            updateProfileState(existingProfile)
+            return
+          }
+        }
+      } else if (data) {
+        console.log("Profile created:", data)
+        updateProfileState(data)
+        return
+      }
+
+      setLoading(false)
+    } catch (error) {
+      console.error("Error in createProfile:", error)
       setLoading(false)
     }
   }
@@ -84,6 +167,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setProfile(data)
     setIsSuperuser(data.role === "superuser")
     setIsActive(data.status === "active")
+    setLoading(false)
   }
 
   const refreshProfile = async () => {
@@ -98,26 +182,52 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }
 
   const signUp = async (email: string, password: string, role: "user" | "superuser") => {
-    const { data, error } = await supabase.auth.signUp({ email, password })
-
-    if (!error && data.user) {
-      // Create profile with appropriate status
-      // Users are active by default, superusers are pending until approved
-      const status = role === "user" ? "active" : "pending"
-
-      const { error: insertError } = await supabase.from("profiles").insert({
-        id: data.user.id,
+    try {
+      // Sign up the user with role metadata
+      const { data, error } = await supabase.auth.signUp({
         email,
-        role,
-        status,
+        password,
+        options: {
+          data: {
+            role: role,
+            status: role === "user" ? "active" : "pending",
+          },
+        },
       })
 
-      if (insertError) {
-        console.error("Error creating profile:", insertError)
+      if (error) {
+        return { error, user: null }
       }
-    }
 
-    return { error, user: data.user }
+      if (!data.user) {
+        return {
+          error: new Error("User creation failed"),
+          user: null,
+        }
+      }
+
+      // For superusers, we need to create the profile immediately
+      // so it shows up in the pending superusers list
+      if (role === "superuser") {
+        const { error: profileError } = await supabase.from("profiles").insert({
+          id: data.user.id,
+          email,
+          role,
+          status: "pending",
+          created_at: new Date().toISOString(),
+        })
+
+        if (profileError) {
+          console.error("Error creating superuser profile:", profileError)
+          // Continue anyway, as the profile might be created by other means
+        }
+      }
+
+      return { error: null, user: data.user }
+    } catch (error: any) {
+      console.error("Error in signUp:", error)
+      return { error, user: null }
+    }
   }
 
   const signOut = async () => {

@@ -6,12 +6,19 @@ import { Button } from "@/components/ui/button"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Badge } from "@/components/ui/badge"
 import { format } from "date-fns"
-import { fetchPendingTimers, fetchPendingSuperusers, approveTimer, approveSuperuser } from "@/services/timer-service"
+import {
+  fetchPendingTimers,
+  fetchPendingSuperusers,
+  approveTimer,
+  approveSuperuser,
+  deleteTimer,
+  rejectSuperuser
+} from "@/services/timer-service"
 import { useAuth } from "@/contexts/auth-context"
 import type { Timer } from "@/types/timer"
-import { Clock, User, BookOpen, Check, X } from "lucide-react"
+import type { Profile } from "@/types/supabase"
+import { Clock, User, BookOpen, Check, X, RefreshCw } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
-import { LCAppUser } from "@/types/user"
 
 interface AdminPanelProps {
   onApprove: () => void
@@ -20,8 +27,9 @@ interface AdminPanelProps {
 export function AdminPanel({ onApprove }: AdminPanelProps) {
   const { refreshProfile } = useAuth()
   const [pendingTimers, setPendingTimers] = useState<Timer[]>([])
-  const [pendingSuperusers, setPendingSuperusers] = useState<LCAppUser[]>([])
+  const [pendingSuperusers, setPendingSuperusers] = useState<Profile[]>([])
   const [loading, setLoading] = useState(true)
+  const [refreshing, setRefreshing] = useState(false)
   const [activeTab, setActiveTab] = useState("timers")
 
   useEffect(() => {
@@ -30,12 +38,25 @@ export function AdminPanel({ onApprove }: AdminPanelProps) {
 
   const loadPendingItems = async () => {
     setLoading(true)
-    const timers = await fetchPendingTimers()
-    const superusers = await fetchPendingSuperusers()
+    try {
+      const timers = await fetchPendingTimers()
+      const superusers = await fetchPendingSuperusers()
 
-    setPendingTimers(timers)
-    setPendingSuperusers(superusers)
-    setLoading(false)
+      console.log("Loaded pending items:", { timers, superusers }) // Debug log
+
+      setPendingTimers(timers)
+      setPendingSuperusers(superusers)
+    } catch (error) {
+      console.error("Error loading pending items:", error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  const handleRefresh = async () => {
+    setRefreshing(true)
+    await loadPendingItems()
+    setRefreshing(false)
   }
 
   const handleApproveTimer = async (id: string) => {
@@ -52,6 +73,14 @@ export function AdminPanel({ onApprove }: AdminPanelProps) {
 
       // If the current user is being approved, refresh their profile
       await refreshProfile()
+    }
+  }
+
+  const handleRejectSuperuser = async (id: string) => {
+    const success = await rejectSuperuser(id)
+    if (success) {
+      setPendingSuperusers(pendingSuperusers.filter((user) => user.id !== id))
+      onApprove()
     }
   }
 
@@ -72,9 +101,15 @@ export function AdminPanel({ onApprove }: AdminPanelProps) {
 
   return (
     <Card className="w-full">
-      <CardHeader>
-        <CardTitle>Admin Panel</CardTitle>
-        <CardDescription>Approve pending timer requests and superuser accounts</CardDescription>
+      <CardHeader className="flex flex-row items-center justify-between">
+        <div>
+          <CardTitle>Admin Panel</CardTitle>
+          <CardDescription>Approve pending timer requests and superuser accounts</CardDescription>
+        </div>
+        <Button variant="outline" size="sm" onClick={handleRefresh} disabled={refreshing} className="h-8">
+          <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? "animate-spin" : ""}`} />
+          Refresh
+        </Button>
       </CardHeader>
       <CardContent>
         <Tabs defaultValue="timers" value={activeTab} onValueChange={setActiveTab}>
@@ -151,7 +186,7 @@ export function AdminPanel({ onApprove }: AdminPanelProps) {
                         size="sm"
                         variant="outline"
                         className="h-8 text-red-500 hover:text-red-700"
-                        onClick={() => setPendingTimers(pendingTimers.filter((t) => t.id !== timer.id))}
+                        onClick={() => deleteTimer(timer.id)}
                       >
                         <X className="h-4 w-4 mr-1" />
                         Reject
@@ -200,7 +235,7 @@ export function AdminPanel({ onApprove }: AdminPanelProps) {
                         size="sm"
                         variant="outline"
                         className="h-8 text-red-500 hover:text-red-700"
-                        onClick={() => setPendingSuperusers(pendingSuperusers.filter((u) => u.id !== user.id))}
+                        onClick={() => handleRejectSuperuser(user.id)}
                       >
                         <X className="h-4 w-4 mr-1" />
                         Reject

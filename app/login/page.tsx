@@ -2,7 +2,7 @@
 
 import type React from "react"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { useAuth } from "@/contexts/auth-context"
 import { Button } from "@/components/ui/button"
@@ -11,31 +11,49 @@ import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group"
-import { AlertCircle, Info } from "lucide-react"
+import { AlertCircle, Info, Loader2 } from "lucide-react"
 import { Alert, AlertDescription } from "@/components/ui/alert"
 
 export default function LoginPage() {
   const router = useRouter()
-  const { signIn, signUp } = useAuth()
+  const { signIn, signUp, user } = useAuth()
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
   const [role, setRole] = useState<"user" | "superuser">("user")
   const [error, setError] = useState<string | null>(null)
+  const [success, setSuccess] = useState<string | null>(null)
   const [loading, setLoading] = useState(false)
   const [showSuperuserInfo, setShowSuperuserInfo] = useState(false)
+  const [activeTab, setActiveTab] = useState("login")
+
+  // Redirect if already logged in
+  useEffect(() => {
+    if (user) {
+      router.push("/")
+    }
+  }, [user, router])
 
   const handleSignIn = async (e: React.FormEvent) => {
     e.preventDefault()
     setLoading(true)
     setError(null)
+    setSuccess(null)
 
-    const { error } = await signIn(email, password)
+    try {
+      const { error } = await signIn(email, password)
 
-    if (error) {
-      setError(error.message)
+      if (error) {
+        setError(error.message)
+        setLoading(false)
+      }
+      // No need to redirect here, the useEffect will handle it
+    } catch (err: unknown) {
+      if (err instanceof Error) {
+        setError(err.message || "An error occurred during sign in")
+      } else {
+        setError("An unknown error occurred during sign in")
+      }
       setLoading(false)
-    } else {
-      router.push("/")
     }
   }
 
@@ -43,21 +61,38 @@ export default function LoginPage() {
     e.preventDefault()
     setLoading(true)
     setError(null)
+    setSuccess(null)
 
-    const { error } = await signUp(email, password, role)
+    try {
+      console.log("Signing up with:", { email, password, role }) // Debug log
 
-    if (error) {
-      setError(error.message)
-      setLoading(false)
-    } else {
-      if (role === "superuser") {
-        setError(
-          "Your superuser account has been created but requires approval from an existing superuser before you can use superuser features.",
-        )
+      const { error, user } = await signUp(email, password, role)
+
+      console.log("Sign up result:", { error, user }) // Debug log
+
+      if (error) {
+        setError(error.message || "An error occurred during sign up")
         setLoading(false)
       } else {
-        router.push("/")
+        if (role === "superuser") {
+          setSuccess(
+            "Your superuser account has been created but requires approval from an existing superuser before you can use superuser features.",
+          )
+          setActiveTab("login")
+          setLoading(false)
+        } else {
+          // For regular users, the useEffect will handle redirection
+          // But we'll still show a success message
+          setSuccess("Account created successfully! You'll be redirected to the dashboard.")
+        }
       }
+    } catch (err: unknown) {
+      if (err instanceof Error) {
+        setError(err.message || "An error occurred during sign up")
+      } else {
+        setError("An unknown error occurred during sign up")
+      }
+      setLoading(false)
     }
   }
 
@@ -68,7 +103,7 @@ export default function LoginPage() {
           <CardTitle className="text-2xl text-center">Countdown Timers</CardTitle>
           <CardDescription className="text-center">Sign in to manage your timers</CardDescription>
         </CardHeader>
-        <Tabs defaultValue="login" className="w-full">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="w-full">
           <TabsList className="grid w-full grid-cols-2">
             <TabsTrigger value="login">Login</TabsTrigger>
             <TabsTrigger value="register">Register</TabsTrigger>
@@ -83,6 +118,14 @@ export default function LoginPage() {
                     <AlertDescription>{error}</AlertDescription>
                   </Alert>
                 )}
+
+                {success && (
+                  <Alert>
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertDescription>{success}</AlertDescription>
+                  </Alert>
+                )}
+
                 <div className="space-y-2">
                   <Label htmlFor="email">Email</Label>
                   <Input id="email" type="email" value={email} onChange={(e) => setEmail(e.target.value)} required />
@@ -100,7 +143,14 @@ export default function LoginPage() {
               </CardContent>
               <CardFooter>
                 <Button type="submit" className="w-full" disabled={loading}>
-                  {loading ? "Signing in..." : "Sign In"}
+                  {loading ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Signing in...
+                    </>
+                  ) : (
+                    "Sign In"
+                  )}
                 </Button>
               </CardFooter>
             </form>
@@ -110,11 +160,19 @@ export default function LoginPage() {
             <form onSubmit={handleSignUp}>
               <CardContent className="space-y-4 pt-4">
                 {error && (
-                  <Alert variant={role === "superuser" ? "default" : "destructive"}>
+                  <Alert variant="destructive">
                     <AlertCircle className="h-4 w-4" />
                     <AlertDescription>{error}</AlertDescription>
                   </Alert>
                 )}
+
+                {success && (
+                  <Alert>
+                    <AlertCircle className="h-4 w-4" />
+                    <AlertDescription>{success}</AlertDescription>
+                  </Alert>
+                )}
+
                 <div className="space-y-2">
                   <Label htmlFor="register-email">Email</Label>
                   <Input
@@ -177,7 +235,14 @@ export default function LoginPage() {
               </CardContent>
               <CardFooter>
                 <Button type="submit" className="w-full" disabled={loading}>
-                  {loading ? "Creating account..." : "Create Account"}
+                  {loading ? (
+                    <>
+                      <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                      Creating account...
+                    </>
+                  ) : (
+                    "Create Account"
+                  )}
                 </Button>
               </CardFooter>
             </form>

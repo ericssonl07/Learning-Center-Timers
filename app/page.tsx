@@ -2,7 +2,7 @@
 
 import { Badge } from "@/components/ui/badge"
 
-import { useState, useEffect, useCallback } from "react"
+import { useState, useEffect } from "react"
 import { useRouter } from "next/navigation"
 import { TimerForm } from "@/components/timer-form"
 import { TimerList } from "@/components/timer-list"
@@ -17,6 +17,7 @@ import { useAuth } from "@/contexts/auth-context"
 import { fetchTimers, updateTimer, deleteTimer } from "@/services/timer-service"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Alert, AlertDescription } from "@/components/ui/alert"
+import { useCallback } from "react"
 
 export default function CountdownTimers() {
   const router = useRouter()
@@ -68,15 +69,15 @@ export default function CountdownTimers() {
       loadTimers()
     }
   }, [user, isSuperuser, isActive, loadTimers])
-  
+
   // Update timers and check for activation
   useEffect(() => {
     if (!user) return
-    
+
     const interval = setInterval(async () => {
       const now = Date.now()
       let updated = false
-      
+
       setTimers((prevTimers) => {
         const newTimers = [...prevTimers].map((timer) => {
           // Only check for activation if timer is approved
@@ -86,7 +87,7 @@ export default function CountdownTimers() {
           }
           return timer
         })
-        
+
         // Sort timers
         newTimers.sort((a, b) => {
           // For active timers, sort by remaining time
@@ -95,19 +96,19 @@ export default function CountdownTimers() {
             const bRemaining = Math.max(0, b.endTime - now)
             return aRemaining - bRemaining
           }
-          
+
           // Active timers come before inactive ones
           if (a.isActive !== b.isActive) {
             return a.isActive ? -1 : 1
           }
-          
+
           // For inactive timers, sort by start time
           return a.startTime - b.startTime
         })
-        
+
         return newTimers
       })
-      
+
       // Update activated timers in the database
       if (updated) {
         const activatedTimers = timers.filter((t) => t.isActive && t.status === "approved" && now >= t.startTime)
@@ -116,11 +117,11 @@ export default function CountdownTimers() {
         }
       }
     }, 1000)
-    
+
     return () => clearInterval(interval)
   }, [user, timers])
-  
-  // const loadTimers = useCallback(async () => {
+
+  // const loadTimers = async () => {
   //   if (!user) return
 
   //   setLoading(true)
@@ -144,7 +145,7 @@ export default function CountdownTimers() {
   //   setCompletedTimers(newCompleted)
   //   setFlashingTimers(newFlashing)
   //   setLoading(false)
-  // }, [user, isSuperuser])
+  // }
 
   const handleRefresh = async () => {
     setRefreshing(true)
