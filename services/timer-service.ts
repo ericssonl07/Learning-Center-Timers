@@ -194,9 +194,8 @@ export async function rejectSuperuser(userId: string): Promise<boolean> {
       // Fall back to direct update
       const { error } = await supabase
         .from("profiles")
-        .update({ status: "rejected" })
+        .update({ role: "user", status: "active" })
         .eq("id", userId)
-        .eq("role", "superuser")
 
       if (error) {
         throw error
