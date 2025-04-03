@@ -100,17 +100,17 @@ export function TimerCard({
           <div>
             <h3 className="font-medium text-lg">{timer.subject}</h3>
             <div className="flex flex-col gap-1 mt-1">
-              <div className="flex items-center text-sm text-muted-foreground">
+              <div className="flex items-center text-sm text-muted-foreground space-x-2">
                 <UserRound className="h-3.5 w-3.5 mr-1.5" />
                 <span>Teacher: {timer.teacherName}</span>
-              </div>
-              <div className="flex items-center text-sm text-muted-foreground">
                 <User className="h-3.5 w-3.5 mr-1.5" />
-                <span>
-                  Student: {timer.studentName}
-                  {timer.seatNumber && ` (Seat #${timer.seatNumber})`}
-                </span>
+                <span>Student: {timer.studentName}</span>
               </div>
+              {timer.seatNumber && (
+                <div className="flex items-center text-muted-foreground">
+                  <span className="text-3xl mr-1">Seat {timer.seatNumber}</span>
+                </div>
+              )}
             </div>
           </div>
           <div className="flex flex-col items-end gap-2">
